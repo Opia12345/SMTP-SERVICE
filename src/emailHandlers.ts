@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { getTransporter } from "./mailer";
+import { getResend } from "./mailer";
+import { buildEmailTemplate } from "./emailTemplate";
 import type {
   SingleEmailPayload,
   BulkEmailPayload,
@@ -9,13 +10,14 @@ import type {
 } from "./types";
 
 function getSenderFrom(): string {
-  const name = process.env.SENDER_NAME ?? "Notifications";
-  const user = process.env.GMAIL_USER ?? "";
-  return `"${name}" <${user}>`;
+  const name =
+    process.env.SENDER_NAME ?? process.env.APP_NAME ?? "Notifications";
+  const email = process.env.RESEND_FROM ?? "";
+  return `${name} <${email}>`;
 }
 
 function getReplyTo(override?: string): string {
-  return override ?? process.env.REPLY_TO ?? process.env.GMAIL_USER ?? "";
+  return override ?? process.env.REPLY_TO ?? process.env.RESEND_FROM ?? "";
 }
 
 function personalise(template: string, name: string): string {
@@ -26,7 +28,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ─── POST /api/send-email ──────────────────────────────────────────────────
+// ─── POST /api/send-email ───────────────────────────────────────────────────
 
 export async function sendEmailHandler(
   req: Request<object, SendEmailResponse, Partial<SingleEmailPayload>>,
@@ -42,23 +44,33 @@ export async function sendEmailHandler(
     return;
   }
 
+  const wrappedHtml = buildEmailTemplate({
+    title: subject,
+    preheader: text ?? "",
+    body: html ?? `<p>${text}</p>`,
+  });
+
   try {
-    const info = await getTransporter().sendMail({
+    const { data, error } = await getResend().emails.send({
       from: getSenderFrom(),
       to,
       subject,
-      html,
+      html: wrappedHtml,
       text,
       replyTo: getReplyTo(replyTo),
     });
 
-    res.status(200).json({ success: true, messageId: String(info.messageId) });
+    if (error) throw new Error(error.message);
+
+    res.status(200).json({ success: true, messageId: data?.id });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[sendEmail] ✗ ${to} — ${message}`);
     res.status(500).json({ success: false, error: message });
   }
 }
+
+// ─── POST /api/send-bulk-email ──────────────────────────────────────────────
 
 export async function sendBulkEmailHandler(
   req: Request<object, BulkEmailResponse, Partial<BulkEmailPayload>>,
@@ -101,20 +113,28 @@ export async function sendBulkEmailHandler(
       continue;
     }
 
+    const personalisedBody = personalise(body, name);
+    const wrappedHtml = buildEmailTemplate({
+      title: subject,
+      body: personalisedBody,
+    });
+
     try {
-      const info = await getTransporter().sendMail({
+      const { data, error } = await getResend().emails.send({
         from: getSenderFrom(),
         to: email,
         subject,
-        html: personalise(body, name),
+        html: wrappedHtml,
         replyTo: getReplyTo(replyTo),
       });
+
+      if (error) throw new Error(error.message);
 
       results.push({
         id,
         to: email,
         status: "sent",
-        messageId: String(info.messageId),
+        messageId: data?.id,
       });
       console.log(`[bulk] ✓ ${email}`);
     } catch (err) {
@@ -123,7 +143,6 @@ export async function sendBulkEmailHandler(
       results.push({ id, to: email, status: "failed", error: message });
     }
 
-    // 300 ms gap keeps us within Gmail's per-second sending limit
     await sleep(300);
   }
 

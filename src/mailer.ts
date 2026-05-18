@@ -1,25 +1,20 @@
-import nodemailer, { Transporter } from "nodemailer";
+import { Resend } from "resend";
 
-let _transporter: Transporter | null = null;
+let resend: Resend | null = null;
 
-export function getTransporter(): Transporter {
-  if (_transporter) return _transporter;
-
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_PASS;
-
-  if (!user || !pass) {
-    throw new Error("GMAIL_USER and GMAIL_PASS must be set in your .env file");
+export function getResend(): Resend {
+  if (!resend) {
+    resend = new Resend(process.env.RESEND_API_KEY);
   }
-
-  _transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
-
-  return _transporter;
+  return resend;
 }
 
 export async function verifyConnection(): Promise<void> {
-  await getTransporter().verify();
+  const { error } = await getResend().emails.send({
+    from: process.env.RESEND_FROM ?? "onboarding@resend.dev",
+    to: process.env.GMAIL_USER ?? "",
+    subject: "SMTP connection test",
+    html: "<p>Connection verified.</p>",
+  });
+  if (error) throw new Error(error.message);
 }
