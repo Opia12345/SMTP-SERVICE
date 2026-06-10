@@ -29,12 +29,12 @@ app.listen(PORT, async () => {
 
   try {
     await verifyConnection();
-    console.log("Gmail SMTP connected\n");
+    console.log("SMTP connected (Zoho)\n");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`❌  Gmail SMTP failed: ${message}`);
     console.error(
-      "    → Set GMAIL_USER and GMAIL_PASS (App Password) in your .env\n"
+      "    → Check ZOHO_USER and ZOHO_PASS in your .env (App Password or SMTP password)\n"
     );
   }
 });

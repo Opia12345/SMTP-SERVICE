@@ -1,20 +1,34 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 
-let resend: Resend | null = null;
+let transporter: nodemailer.Transporter<SMTPTransport.SentMessageInfo> | null = null;
 
-export function getResend(): Resend {
-  if (!resend) {
-    resend = new Resend(process.env.RESEND_API_KEY);
+function getTransporter() {
+  if (!transporter) {
+    const host = process.env.ZOHO_HOST ?? "smtp.zoho.com";
+    const port = Number(process.env.ZOHO_PORT ?? 465);
+    const secure = port === 465;
+
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: {
+        user: process.env.ZOHO_USER,
+        pass: process.env.ZOHO_PASS,
+      },
+    } as SMTPTransport.Options);
   }
-  return resend;
+  return transporter;
+}
+
+export async function sendMail(options: nodemailer.SendMailOptions) {
+  const info = await getTransporter().sendMail(options);
+  return info;
 }
 
 export async function verifyConnection(): Promise<void> {
-  const { error } = await getResend().emails.send({
-    from: process.env.RESEND_FROM ?? "onboarding@resend.dev",
-    to: process.env.GMAIL_USER ?? "",
-    subject: "SMTP connection test",
-    html: "<p>Connection verified.</p>",
-  });
-  if (error) throw new Error(error.message);
+  const t = getTransporter();
+  // verify will throw if connection/auth fails
+  await t.verify();
 }

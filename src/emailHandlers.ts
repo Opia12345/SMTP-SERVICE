@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getResend } from "./mailer";
+import { sendMail } from "./mailer";
 import { buildEmailTemplate } from "./emailTemplate";
 import type {
   SingleEmailPayload,
@@ -12,12 +12,12 @@ import type {
 function getSenderFrom(): string {
   const name =
     process.env.SENDER_NAME ?? process.env.APP_NAME ?? "Notifications";
-  const email = process.env.RESEND_FROM ?? "";
+  const email = process.env.ZOHO_USER ?? process.env.RESEND_FROM ?? "";
   return `${name} <${email}>`;
 }
 
 function getReplyTo(override?: string): string {
-  return override ?? process.env.REPLY_TO ?? process.env.RESEND_FROM ?? "";
+  return override ?? process.env.REPLY_TO ?? process.env.ZOHO_USER ?? process.env.RESEND_FROM ?? "";
 }
 
 function personalise(template: string, name: string): string {
@@ -50,20 +50,18 @@ export async function sendEmailHandler(
     body: html ?? `<p>${text}</p>`,
   });
 
-  try {
-    const { data, error } = await getResend().emails.send({
-      from: getSenderFrom(),
-      to,
-      subject,
-      html: wrappedHtml,
-      text,
-      replyTo: getReplyTo(replyTo),
-    });
+    try {
+      const info = await sendMail({
+        from: getSenderFrom(),
+        to,
+        subject,
+        html: wrappedHtml,
+        text,
+        replyTo: getReplyTo(replyTo),
+      });
 
-    if (error) throw new Error(error.message);
-
-    res.status(200).json({ success: true, messageId: data?.id });
-  } catch (err) {
+      res.status(200).json({ success: true, messageId: info.messageId });
+    } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[sendEmail] ✗ ${to} — ${message}`);
     res.status(500).json({ success: false, error: message });
@@ -120,7 +118,7 @@ export async function sendBulkEmailHandler(
     });
 
     try {
-      const { data, error } = await getResend().emails.send({
+      const info = await sendMail({
         from: getSenderFrom(),
         to: email,
         subject,
@@ -128,13 +126,11 @@ export async function sendBulkEmailHandler(
         replyTo: getReplyTo(replyTo),
       });
 
-      if (error) throw new Error(error.message);
-
       results.push({
         id,
         to: email,
         status: "sent",
-        messageId: data?.id,
+        messageId: info.messageId,
       });
       console.log(`[bulk] ✓ ${email}`);
     } catch (err) {
